@@ -18,7 +18,7 @@ executable miso-app
   main-is:             Main.hs
   ghcjs-options:       -dedupe
   build-depends:       base >=4.12 && <5,
-                       text, aeson,
+                       text, aeson, random, time,
                        microlens, microlens-mtl, microlens-th,
                        miso, servant-client-ghcjs
   hs-source-dirs:      web

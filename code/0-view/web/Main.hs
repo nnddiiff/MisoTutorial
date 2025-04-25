@@ -4,8 +4,11 @@
 
 module Main where
 
+import System.Random
+import Data.Time.LocalTime
+
 import Miso
-import Miso.String (MisoString)
+import Miso.String (MisoString, toMisoString)
 
 main :: IO ()
 main = startApp App { .. }
@@ -36,11 +39,31 @@ initialItems
     ]
 
 data Action
-  = None
+  = None 
+  | ToggleState {toggleId :: MisoString}
+  | RandomToDo
+  | AddToDo     { newListItem :: ListItem}
+  
   deriving (Show, Eq)
 
 updateModel :: Action -> Model -> Effect Action Model
-updateModel _ m = noEff m
+updateModel None m = noEff m
+updateModel (ToggleState toggleId) m
+  = let new = flip map m
+                (\ li@ListItem { .. } ->
+                    if liId == toggleId
+                      then li { liDone = not liDone }
+                      else li)
+    in noEff new
+updateModel (AddToDo newLi) m 
+  = noEff (m <> [newLi])
+updateModel RandomToDo m
+  = m <# do txt <- (["hello", "hallo", "hola"] !!) <$> randomRIO (0, 2)
+            tme <- toMisoString . show <$> getZonedTime
+            let liId = tme 
+                liText = txt <> " at" <> tme
+                newLi = ListItem { liDone = False, ..}
+            pure $ AddToDo newLi
 
 bootstrapUrl :: MisoString
 bootstrapUrl = "https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
@@ -61,17 +84,23 @@ viewListItem ListItem { .. }
                          , type_    "checkbox"
                          , value_   "on"
                          , checked_ liDone
-                         , id_      liId ]
+                         , id_      liId 
+                         , onChange (\_ -> ToggleState liId)]
                 , label_ [ class_ (if liDone
                                       then "custom-control-label text-muted"
                                       else "custom-control-label")
                          , for_   liId ]
                          [ text liText ]] ]
-
+ 
 header :: View Action
 header
   = nav_ [ class_ "navbar navbar-dark bg-dark"]
          [ h2_ [ class_ "bd-title text-light" ]
                [ text "To-do "
                , span_ [ class_ "badge badge-warning"]
-                       [ text "in miso!"] ] ]
+                       [ text "in miso!"] ]
+         , form_ [ class_ "form-inline"  ]
+                 [ button_ [ class_ "btn btn-outline-warning"
+                           , type_  "button"
+                           , onClick RandomToDo]
+                           [ text "New (random) to-do"] ] ]

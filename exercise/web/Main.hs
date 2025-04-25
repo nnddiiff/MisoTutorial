@@ -11,13 +11,14 @@ import Data.Map ()
 import Data.Maybe (isJust)
 
 import Miso
-import Miso.String (MisoString)
+
+import           Miso.String (MisoString, toMisoString)
 
 main :: IO ()
 main = startApp App { .. }
   where
     initialAction = None
-    model         = Model { grid = emptyGrid }
+    model         = Model { grid = aGrid }
     update        = updateModel
     view          = viewModel
     events        = defaultEvents
@@ -144,8 +145,14 @@ gridView grid
                        , style_  [ ("width", "100%"), ("height", "100%")
                                  , ("font-size", "xxx-large") ]
                        , class_  "btn btn-outline-secondary"
-                       , onClick (ClickSquare rowId colId) ]
-                       [ text "·" ] ]
+                       , onClick (ClickSquare rowId colId) 
+                       , if isJust square then disabled_ True
+                         else disabled_ False]
+                       [ showText square] ]
+
+    showText :: Maybe Square -> View Action
+    showText Nothing = text "."
+    showText (Just square) = text $ toMisoString $ show square
 
 alertView :: MisoString -> View Action
 alertView v
