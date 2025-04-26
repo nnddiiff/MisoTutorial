@@ -38,6 +38,12 @@ onIndex n f = if n < 0 then id else loop n where
 replaceAtMatrix :: (Int, Int) -> a -> [[a]] -> [[a]]
 replaceAtMatrix (m, n) = onIndex m . onIndex n . const
 
+gameFinished :: Model -> Bool
+gameFinished Model { .. } = isFinished grid || isJust winner
+             where 
+              isFinished :: Grid -> Bool  
+              isFinished = isJust . sequenceA . concat
+
 data Square
   = X | O
   deriving (Show, Eq)
@@ -72,16 +78,18 @@ data Model
 data Action
   = None
   | ClickSquare Int Int
+  | NewGame
   deriving (Show, Eq)
 
 updateModel :: Action -> Model -> Effect Action Model
 updateModel None m  = noEff m
-updateModel (ClickSquare rowId colId) m@(Model grid player winner)
+updateModel (ClickSquare rowId colId) m@(Model { .. })
     = let replace = isNothing ((grid !! rowId) !! colId)
           grid'   = iff replace (replaceAtMatrix (rowId, colId) (Just player) grid) grid
           player' = iff (player == X) O X
           winner'  = hasWinner grid'
       in noEff (Model grid' player' winner')
+updateModel NewGame m@(Model { .. }) = noEff $ Model { grid = emptyGrid, player = X, winner = Nothing } 
 
 bootstrapUrl :: MisoString
 bootstrapUrl = "https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
@@ -90,7 +98,7 @@ viewModel :: Model -> View Action
 viewModel m
   = div_ [ class_ "container"]
          [ headerView
-         -- , newGameView m
+         , newGameView m
          , contentView m
          -- , statsView m
          , link_ [ rel_ "stylesheet"
@@ -105,7 +113,7 @@ headerView
                        [ text "in miso!"] ] ]
 
 newGameView :: Model -> View Action
-newGameView _
+newGameView m
   = nav_ [ class_ "navbar navbar-light bg-light"]
          [ form_ [ class_ "form-inline" ]
                  [ input_  [ class_       "form-control mr-sm-2"
@@ -128,8 +136,8 @@ newGameView _
                  --              option_ [ ] [ text option])
                  , button_ [ class_       "btn btn-outline-warning"
                            , type_        "button"
-                           -- , onClick   undefined
-                           , disabled_    False ]
+                           , onClick (NewGame)
+                           , disabled_ $ not $ gameFinished m ]
                            [ text "New game" ] ] ]
 
 contentView :: Model -> View Action
