@@ -17,7 +17,7 @@ main :: IO ()
 main = startApp App { .. }
   where
     initialAction = None
-    model         = Model { grid = aGrid, player = X }
+    model         = Model { grid = emptyGrid, player = X, winner = Nothing }
     update        = updateModel
     view          = viewModel
     events        = defaultEvents
@@ -66,7 +66,7 @@ hasWinner g
       = Nothing
 
 data Model
-  = Model { grid :: Grid, player :: Square }
+  = Model { grid :: Grid, player :: Square, winner :: Maybe Square }
   deriving (Show, Eq)
 
 data Action
@@ -75,13 +75,13 @@ data Action
   deriving (Show, Eq)
 
 updateModel :: Action -> Model -> Effect Action Model
-updateModel None m
-  = noEff m
-updateModel (ClickSquare rowId colId) m@(Model grid player)
-  = let replace = isNothing ((grid !! rowId) !! colId)
-        grid' = iff replace (replaceAtMatrix (rowId, colId) (Just player) grid) grid
-        player' = iff (player == X) O X     
-    in noEff (Model grid' player')
+updateModel None m  = noEff m
+updateModel (ClickSquare rowId colId) m@(Model grid player winner)
+    = let replace = isNothing ((grid !! rowId) !! colId)
+          grid'   = iff replace (replaceAtMatrix (rowId, colId) (Just player) grid) grid
+          player' = iff (player == X) O X
+          winner'  = hasWinner grid'
+      in noEff (Model grid' player' winner')
 
 bootstrapUrl :: MisoString
 bootstrapUrl = "https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
@@ -136,21 +136,24 @@ contentView :: Model -> View Action
 contentView m@Model { .. }
   = div_ [ style_ [("margin", "20px")]]
          [ gridView m
-         , alertView "who is the winner?" ]
+         , alertView $ toMisoString $ whoWin winner]
+          where
+            whoWin = maybe "" (\square -> "We have a winner! Player " <> show square <> "!")
 
 gridView :: Model -> View Action
-gridView (Model grid player)
+gridView Model { .. }
   = div_ [ style_ [("margin", "20px")]]
          [ div_ [ class_ "row justify-content-around align-items-center" ]
                 [ h3_ [iff (player == X) (class_ "text-white bg-dark") (class_ "text-secondary")] [ text "Player X"]
                 , div_ [ style_ [("display", "inline-block")] ]
+                       [fieldset_ (iff (isJust winner) [stringProp "disabled" "disabled"] [stringProp "enabled" "enabled"] )
                        [ div_ [ style_ [ ("display", "grid")
                                        , ("grid-template-rows", "1fr 1fr 1fr")
                                        , ("grid-template-columns", "1fr 1fr 1fr")
                                        , ("grid-gap", "2px") ] ]
                                ( flip concatMap (zip [0 ..] grid) $ \(rowId, row) ->
                                    flip map (zip [0 ..] row) $ \(colId, sq) ->
-                                     cell rowId colId sq )]
+                                     cell rowId colId sq )]]
                 , h3_ [iff (player == O) (class_ "text-white bg-dark") (class_ "text-secondary") ] [ text "Player O"] ] ]
   where
     cell :: Int -> Int -> Maybe Square -> View Action
