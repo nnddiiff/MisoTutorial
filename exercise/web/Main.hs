@@ -8,23 +8,35 @@ module Main where
 import Data.Foldable (asum)
 import Data.List (transpose, (!!))
 import Data.Map ()
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, isNothing)
 
 import Miso
-
-import           Miso.String (MisoString, toMisoString)
+import Miso.String (MisoString, toMisoString)
 
 main :: IO ()
 main = startApp App { .. }
   where
     initialAction = None
-    model         = Model { grid = aGrid }
+    model         = Model { grid = aGrid, player = X }
     update        = updateModel
     view          = viewModel
     events        = defaultEvents
     subs          = []
     mountPoint    = Nothing
     logLevel      = Off
+
+iff :: Bool -> a -> a -> a
+iff True   tr _  = tr
+iff False  _  fl = fl
+
+onIndex :: Int -> (a -> a) -> ([a] -> [a])
+onIndex n f = if n < 0 then id else loop n where
+    loop _ [] = []
+    loop 0 (x:xs) = f x:xs
+    loop n (x:xs) = x:loop (n-1) xs
+
+replaceAtMatrix :: (Int, Int) -> a -> [[a]] -> [[a]]
+replaceAtMatrix (m, n) = onIndex m . onIndex n . const
 
 data Square
   = X | O
@@ -54,7 +66,7 @@ hasWinner g
       = Nothing
 
 data Model
-  = Model { grid :: Grid }
+  = Model { grid :: Grid, player :: Square }
   deriving (Show, Eq)
 
 data Action
@@ -65,8 +77,11 @@ data Action
 updateModel :: Action -> Model -> Effect Action Model
 updateModel None m
   = noEff m
-updateModel (ClickSquare rowId colId) m
-  = noEff m
+updateModel (ClickSquare rowId colId) m@(Model grid player)
+  = let replace = isNothing ((grid !! rowId) !! colId)
+        grid' = iff replace (replaceAtMatrix (rowId, colId) (Just player) grid) grid
+        player' = iff (player == X) O X     
+    in noEff (Model grid' player')
 
 bootstrapUrl :: MisoString
 bootstrapUrl = "https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
@@ -118,16 +133,16 @@ newGameView _
                            [ text "New game" ] ] ]
 
 contentView :: Model -> View Action
-contentView Model { .. }
+contentView m@Model { .. }
   = div_ [ style_ [("margin", "20px")]]
-         [ gridView grid
+         [ gridView m
          , alertView "who is the winner?" ]
 
-gridView :: Grid -> View Action
-gridView grid
+gridView :: Model -> View Action
+gridView (Model grid player)
   = div_ [ style_ [("margin", "20px")]]
          [ div_ [ class_ "row justify-content-around align-items-center" ]
-                [ h3_ [ ] [ text "Player 1"]
+                [ h3_ [iff (player == X) (class_ "text-white bg-dark") (class_ "text-secondary")] [ text "Player X"]
                 , div_ [ style_ [("display", "inline-block")] ]
                        [ div_ [ style_ [ ("display", "grid")
                                        , ("grid-template-rows", "1fr 1fr 1fr")
@@ -136,7 +151,7 @@ gridView grid
                                ( flip concatMap (zip [0 ..] grid) $ \(rowId, row) ->
                                    flip map (zip [0 ..] row) $ \(colId, sq) ->
                                      cell rowId colId sq )]
-                , h3_ [ ] [ text "Player 2"] ] ]
+                , h3_ [iff (player == O) (class_ "text-white bg-dark") (class_ "text-secondary") ] [ text "Player O"] ] ]
   where
     cell :: Int -> Int -> Maybe Square -> View Action
     cell rowId colId square
