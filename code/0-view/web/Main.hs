@@ -8,13 +8,13 @@ import System.Random
 import Data.Time.LocalTime
 
 import Miso
-import Miso.String (MisoString, toMisoString)
+import Miso.String (MisoString, toMisoString, null)
 
 main :: IO ()
 main = startApp App { .. }
   where
     initialAction = None
-    model         = initialItems
+    model         = Model initialItems ""
     update        = updateModel
     view          = viewModel
     events        = defaultEvents
@@ -30,9 +30,13 @@ data ListItem
     }
   deriving (Show, Eq)
 
-type Model = [ListItem]
+data Model 
+  = Model {
+       items       :: [ListItem]
+     , newItemText ::  MisoString
+  } deriving (Show, Eq)
 
-initialItems :: Model
+initialItems :: [ListItem]
 initialItems
   = [ ListItem "lunch"    "Have lunch"           True
     , ListItem "workshop" "Give a Miso workshop" False
@@ -41,27 +45,30 @@ initialItems
 data Action
   = None 
   | ToggleState {toggleId :: MisoString}
-  | RandomToDo
-  | AddToDo     { newListItem :: ListItem}
+  | AddToDo     { newListItem :: ListItem }
+  | ChangeNewItemText { newText :: MisoString }
+  | AddToDoClick
   
   deriving (Show, Eq)
 
 updateModel :: Action -> Model -> Effect Action Model
-updateModel None m = noEff m
-updateModel (ToggleState toggleId) m
-  = let new = flip map m
+updateModel None model = noEff model
+updateModel (ToggleState toggleId) model
+  = let new = flip map (items model)
                 (\ li@ListItem { .. } ->
                     if liId == toggleId
                       then li { liDone = not liDone }
                       else li)
-    in noEff new
-updateModel (AddToDo newLi) m 
-  = noEff (m <> [newLi])
-updateModel RandomToDo m
-  = m <# do txt <- (["hello", "hallo", "hola"] !!) <$> randomRIO (0, 2)
-            tme <- toMisoString . show <$> getZonedTime
+    in noEff $ model { items = new }
+updateModel (AddToDo newLi) model 
+  = noEff ( model { items = items model <> [newLi] } )
+updateModel (ChangeNewItemText newText) model
+  = noEff $ model { newItemText = newText }
+updateModel AddToDoClick model@Model { .. }
+  = model { newItemText = "" } 
+      <# do tme <- toMisoString . show <$> getZonedTime
             let liId = tme 
-                liText = txt <> " at" <> tme
+                liText = newItemText
                 newLi = ListItem { liDone = False, ..}
             pure $ AddToDo newLi
 
@@ -69,10 +76,10 @@ bootstrapUrl :: MisoString
 bootstrapUrl = "https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
 
 viewModel :: Model -> View Action
-viewModel m
+viewModel model
   = div_ [ class_ "container"]
-         [ header
-         , ul_ [ class_ "list-group" ] (map viewListItem m)
+         [ header model
+         , ul_ [ class_ "list-group" ] (map viewListItem  (items model))
          , link_ [ rel_ "stylesheet"
                  , href_ bootstrapUrl ] ]
 
@@ -92,15 +99,21 @@ viewListItem ListItem { .. }
                          , for_   liId ]
                          [ text liText ]] ]
  
-header :: View Action
-header
+header :: Model -> View Action
+header Model { .. }
   = nav_ [ class_ "navbar navbar-dark bg-dark"]
          [ h2_ [ class_ "bd-title text-light" ]
                [ text "To-do "
                , span_ [ class_ "badge badge-warning"]
                        [ text "in miso!"] ]
-         , form_ [ class_ "form-inline"  ]
-                 [ button_ [ class_ "btn btn-outline-warning"
-                           , type_  "button"
-                           , onClick RandomToDo]
-                           [ text "New (random) to-do"] ] ]
+         , form_ [ class_ "form-inline" ]
+                 [ input_  [ class_       "form-control mr-sm-2"
+                           , type_        "text" 
+                           , placeholder_ "Do this" 
+                           , value_       newItemText 
+                           , onChange     ChangeNewItemText ]
+                 , button_ [ class_   "btn btn-outline-warning"
+                           , type_    "button"
+                           , onClick  AddToDoClick
+                           , disabled_ (Miso.String.null newItemText) ]
+                           [ text "New to-do" ] ] ]
