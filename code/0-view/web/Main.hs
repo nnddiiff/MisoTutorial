@@ -1,20 +1,25 @@
 {-# language NamedFieldPuns    #-}
 {-# language OverloadedStrings #-}
 {-# language RecordWildCards   #-}
+{-# language DeriveGeneric     #-}
+{-# language DeriveAnyClass    #-}
 
 module Main where
 
-import System.Random
+-- import System.Random 1:26
 import Data.Time.LocalTime
+import Data.Aeson
+import GHC.Generics
 
 import Miso
+import Miso.Effect.Storage
 import Miso.String (MisoString, toMisoString, null)
 
 main :: IO ()
 main = startApp App { .. }
   where
-    initialAction = None
-    model         = Model initialItems ""
+    initialAction = LoadItems
+    model         = Model [] "" False
     update        = updateModel
     view          = viewModel
     events        = defaultEvents
@@ -28,16 +33,17 @@ data ListItem
     , liText :: MisoString
     , liDone :: Bool
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
 data Model 
   = Model {
-       items       :: [ListItem]
-     , newItemText ::  MisoString
+      items       :: [ListItem]
+    , newItemText :: MisoString
+    , isLoading   :: Bool
   } deriving (Show, Eq)
 
-initialItems :: [ListItem]
-initialItems
+defaultInitialItems :: [ListItem]
+defaultInitialItems
   = [ ListItem "lunch"    "Have lunch"           True
     , ListItem "workshop" "Give a Miso workshop" False
     ]
@@ -48,6 +54,8 @@ data Action
   | AddToDo     { newListItem :: ListItem }
   | ChangeNewItemText { newText :: MisoString }
   | AddToDoClick
+  | LoadItems
+  | SetInitialItems { initialItems :: [ListItem] }
   
   deriving (Show, Eq)
 
@@ -59,9 +67,14 @@ updateModel (ToggleState toggleId) model
                     if liId == toggleId
                       then li { liDone = not liDone }
                       else li)
-    in noEff $ model { items = new }
+    in model { items = new } <# do
+      setLocalStorage "items" new
+      pure None
 updateModel (AddToDo newLi) model 
-  = noEff ( model { items = items model <> [newLi] } )
+  = let new = items model <> [newLi]
+    in model { items = new } <# do
+      setLocalStorage "items" new
+      pure None
 updateModel (ChangeNewItemText newText) model
   = noEff $ model { newItemText = newText }
 updateModel AddToDoClick model@Model { .. }
@@ -71,6 +84,18 @@ updateModel AddToDoClick model@Model { .. }
                 liText = newItemText
                 newLi = ListItem { liDone = False, ..}
             pure $ AddToDo newLi
+updateModel LoadItems model
+  = model { isLoading = True } <# do 
+                store <- getLocalStorage "items"
+                let initialItems 
+                      = case store of
+                          Left  _ -> defaultInitialItems
+                          Right i -> i
+                pure $ SetInitialItems initialItems
+updateModel (SetInitialItems initialItems) model
+  = noEff $ model { items = initialItems, isLoading = False }
+
+
 
 bootstrapUrl :: MisoString
 bootstrapUrl = "https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
@@ -106,14 +131,16 @@ header Model { .. }
                [ text "To-do "
                , span_ [ class_ "badge badge-warning"]
                        [ text "in miso!"] ]
-         , form_ [ class_ "form-inline" ]
-                 [ input_  [ class_       "form-control mr-sm-2"
-                           , type_        "text" 
-                           , placeholder_ "Do this" 
-                           , value_       newItemText 
-                           , onChange     ChangeNewItemText ]
-                 , button_ [ class_   "btn btn-outline-warning"
-                           , type_    "button"
-                           , onClick  AddToDoClick
-                           , disabled_ (Miso.String.null newItemText) ]
-                           [ text "New to-do" ] ] ]
+         ,  if isLoading 
+               then div_ [] [ text "Loading..." ]
+               else form_   [ class_ "form-inline" ]
+                            [ input_  [ class_       "form-control mr-sm-2"
+                                      , type_        "text" 
+                                      , placeholder_ "Do this" 
+                                      , value_       newItemText 
+                                      , onChange     ChangeNewItemText ]
+                            , button_ [ class_   "btn btn-outline-warning"
+                                      , type_    "button"
+                                      , onClick  AddToDoClick
+                                      , disabled_ (Miso.String.null newItemText) ]
+                                      [ text "New to-do" ] ] ]
